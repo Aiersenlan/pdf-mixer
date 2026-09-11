@@ -70,6 +70,17 @@ python tools/make_samples.py
   匯出對話框會先列出將產生哪些檔案；瀏覽器可能會詢問是否允許一次下載多個檔案
 - 依檔名排序會清掉分割符號（重排後原本的位置已經沒有意義），排序完會提示清掉了幾個
 
+**分享連結（選用）**
+- 「完成」的匯出視窗裡勾選「同時上傳到 GitHub，產生分享連結」，會多出幾個欄位：
+  GitHub 帳號、repo、分支、資料夾、Personal Access Token（建議用 fine-grained token，
+  只給那個 repo 的 `Contents: Read and write`）
+- 送出後會透過 GitHub 的 Git Data API 把匯出的 PDF 推到指定 repo，
+  再組出對應的 GitHub Pages 網址，附一個「複製連結」按鈕
+- Token 只會直接從瀏覽器打 `api.github.com`，不會經過任何其他伺服器；
+  預設只記在這次分頁（關掉分頁就沒了），勾選「記住」才會連同 token 存進這台電腦的 `localStorage`
+- **這個連結是公開的，不會過期、也沒有加密**——不要拿來放機密或客戶資料。
+  它跟「本機處理」是兩條獨立的路徑：不勾選這個選項，PDF 完全不會離開瀏覽器
+
 **整體操作**
 - `檔案` / `頁面` 兩種檢視：檔案檢視可以整份調順序、整份旋轉、整份移除
 - 格狀 / 清單兩種排版，右上角滑桿調整縮圖大小
@@ -99,6 +110,7 @@ python tools/make_samples.py
 │   ├── app.js              # 事件接線與流程控制
 │   ├── state.js            # 文件模型 + 復原/重做
 │   ├── pdfio.js            # 讀檔、縮圖、匯出
+│   ├── ghupload.js         # 選用：把匯出的 PDF 推到 GitHub，換一個分享連結
 │   ├── ui.js               # 把 store 畫成畫面
 │   └── dnd.js              # 拖曳排序
 ├── vendor/                 # 已下載到本機的第三方函式庫

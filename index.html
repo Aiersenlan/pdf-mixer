@@ -161,6 +161,42 @@
     </label>
     <p class="export-info" id="export-info"></p>
     <ul class="export-files" id="export-files" hidden></ul>
+
+    <div class="gh-section">
+      <label class="check-line">
+        <input type="checkbox" id="gh-toggle">
+        <span>同時上傳到 GitHub，產生分享連結</span>
+      </label>
+      <div id="gh-fields" hidden>
+        <p class="export-info">
+          會透過 GitHub API 把 PDF 推送到你指定的 repo，之後任何拿到連結的人都能打開，
+          不會自動過期、也不會加密——請不要拿來放機密文件。
+          Token 只會直接從這個瀏覽器送到 GitHub，不會經過其他伺服器。
+        </p>
+        <label class="field"><span>GitHub 帳號 / 組織</span>
+          <input type="text" id="gh-owner" placeholder="例如 Aiersenlan" autocomplete="off">
+        </label>
+        <label class="field"><span>Repo 名稱</span>
+          <input type="text" id="gh-repo" placeholder="例如 pdf-share" autocomplete="off">
+        </label>
+        <label class="field"><span>分支</span>
+          <input type="text" id="gh-branch" value="main" autocomplete="off">
+        </label>
+        <label class="field"><span>資料夾（可留空）</span>
+          <input type="text" id="gh-folder" placeholder="例如 docs" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Personal Access Token（fine-grained，只給這個 repo 的 Contents: Read and write）</span>
+          <input type="password" id="gh-token" placeholder="github_pat_… 或 ghp_…" autocomplete="off">
+        </label>
+        <label class="check-line">
+          <input type="checkbox" id="gh-remember">
+          <span>在這台電腦記住以上設定（包含 token，只存在瀏覽器本機）</span>
+        </label>
+      </div>
+      <ul class="export-files gh-result" id="gh-result" hidden></ul>
+    </div>
+
     <div class="export-actions">
       <button class="btn-ghost" id="export-cancel">取消</button>
       <button class="btn-primary" id="export-go">下載</button>

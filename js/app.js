@@ -17,6 +17,7 @@ import {
 
 import { render, syncSelection, toast, busy, unbusy } from './ui.js';
 import { initDnd, isDraggingInternally } from './dnd.js';
+import { uploadFileToGitHub, pagesUrlFor } from './ghupload.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -33,6 +34,15 @@ const els = {
   exportName: $('#export-name'),
   exportInfo: $('#export-info'),
   exportFiles: $('#export-files'),
+  ghToggle: $('#gh-toggle'),
+  ghFields: $('#gh-fields'),
+  ghOwner: $('#gh-owner'),
+  ghRepo: $('#gh-repo'),
+  ghBranch: $('#gh-branch'),
+  ghFolder: $('#gh-folder'),
+  ghToken: $('#gh-token'),
+  ghRemember: $('#gh-remember'),
+  ghResult: $('#gh-result'),
 };
 
 /** 由「＋」按鈕觸發的新增，記住要插在哪個位置；null 代表接在最後面 */
@@ -537,6 +547,49 @@ function wireExport() {
   els.exportModal.addEventListener('click', (e) => {
     if (e.target === els.exportModal) els.exportModal.hidden = true;
   });
+
+  loadGhSettings();
+  els.ghToggle.addEventListener('change', () => {
+    els.ghFields.hidden = !els.ghToggle.checked;
+  });
+  els.ghResult.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.gh-copy');
+    if (!btn) return;
+    try {
+      await navigator.clipboard.writeText(btn.dataset.url);
+      toast('已複製連結');
+    } catch {
+      toast('複製失敗，請手動選取', true);
+    }
+  });
+}
+
+/* ---------------- GitHub 上傳設定：存在 localStorage，只存這台電腦 ---------------- */
+
+const GH_KEY = 'pdfmix.gh.';
+
+function loadGhSettings() {
+  els.ghOwner.value = localStorage.getItem(GH_KEY + 'owner') || '';
+  els.ghRepo.value = localStorage.getItem(GH_KEY + 'repo') || '';
+  els.ghBranch.value = localStorage.getItem(GH_KEY + 'branch') || 'main';
+  els.ghFolder.value = localStorage.getItem(GH_KEY + 'folder') || '';
+  const remembered = localStorage.getItem(GH_KEY + 'remember') === '1';
+  els.ghRemember.checked = remembered;
+  if (remembered) els.ghToken.value = localStorage.getItem(GH_KEY + 'token') || '';
+}
+
+function saveGhSettings() {
+  localStorage.setItem(GH_KEY + 'owner', els.ghOwner.value.trim());
+  localStorage.setItem(GH_KEY + 'repo', els.ghRepo.value.trim());
+  localStorage.setItem(GH_KEY + 'branch', els.ghBranch.value.trim() || 'main');
+  localStorage.setItem(GH_KEY + 'folder', els.ghFolder.value.trim());
+  if (els.ghRemember.checked) {
+    localStorage.setItem(GH_KEY + 'remember', '1');
+    localStorage.setItem(GH_KEY + 'token', els.ghToken.value.trim());
+  } else {
+    localStorage.removeItem(GH_KEY + 'remember');
+    localStorage.removeItem(GH_KEY + 'token');
+  }
 }
 
 /**
@@ -588,6 +641,8 @@ function openExport() {
     : `共 ${pageCount} 頁，來自 ${names.length} 個檔案。整份 PDF 在你的瀏覽器內組成，不會上傳。`;
 
   renderExportList();
+  els.ghResult.hidden = true;
+  els.ghResult.replaceChildren();
   els.exportModal.hidden = false;
   els.exportName.focus();
   els.exportName.setSelectionRange(0, els.exportName.value.replace(/\.pdf$/i, '').length);
@@ -596,6 +651,7 @@ function openExport() {
 async function doExport() {
   const plan = exportPlan().filter((f) => f.pages.length);
   if (!plan.length) return;
+  const wantsGhUpload = els.ghToggle.checked;
   els.exportModal.hidden = true;
 
   busy('正在產生 PDF…');
@@ -620,12 +676,70 @@ async function doExport() {
     toast(results.length === 1
       ? `已匯出 ${results[0].name}`
       : `已匯出 ${results.length} 個檔案：${results[0].name} … ${results.at(-1).name}`);
+
+    if (wantsGhUpload) await uploadResultsToGitHub(results);
   } catch (err) {
     console.error(err);
     toast(`匯出失敗：${err.message || err}`, true);
   } finally {
     unbusy();
   }
+}
+
+/* ---------------- 上傳到 GitHub，換一個分享連結 ---------------- */
+
+async function uploadResultsToGitHub(results) {
+  const owner = els.ghOwner.value.trim();
+  const repo = els.ghRepo.value.trim();
+  const branch = els.ghBranch.value.trim() || 'main';
+  const folder = els.ghFolder.value.trim().replace(/^\/+|\/+$/g, '');
+  const token = els.ghToken.value.trim();
+
+  saveGhSettings();
+
+  els.ghResult.hidden = false;
+  els.ghResult.replaceChildren();
+
+  if (!owner || !repo || !token) {
+    addGhResultRow(null, '請填齊 GitHub 帳號、repo 與 token，才能上傳', true);
+    return;
+  }
+
+  for (const r of results) {
+    const path = folder ? `${folder}/${r.name}` : r.name;
+    try {
+      busy(`正在上傳 ${r.name} 到 GitHub…`);
+      await uploadFileToGitHub({
+        owner, repo, branch, path, token,
+        bytes: r.bytes,
+        message: `新增 ${path}`,
+      });
+      addGhResultRow(pagesUrlFor({ owner, repo, path }), r.name, false);
+    } catch (err) {
+      console.error(err);
+      addGhResultRow(null, `${r.name} 上傳失敗：${err.message || err}`, true);
+    }
+  }
+}
+
+function addGhResultRow(url, label, isError) {
+  const li = document.createElement('li');
+  if (isError) li.classList.add('is-error');
+
+  const text = document.createElement('span');
+  text.className = 'gh-link-url';
+  text.textContent = url || label;
+  li.append(text);
+
+  if (url) {
+    const copy = document.createElement('button');
+    copy.className = 'gh-copy';
+    copy.type = 'button';
+    copy.textContent = '複製連結';
+    copy.dataset.url = url;
+    li.append(copy);
+  }
+  els.ghResult.append(li);
 }
 
 /* ============================================================

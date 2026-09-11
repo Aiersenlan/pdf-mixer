@@ -431,6 +431,26 @@ input[type=checkbox]:checked::after {
 .export-files li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
 .export-files li span:last-child { color: var(--muted); flex: none; }
 
+/* ---------------- GitHub 上傳區塊 ---------------- */
+.gh-section { margin: -4px 0 14px; }
+.gh-section .check-line { margin-bottom: 4px; }
+#gh-fields { padding: 12px 2px 2px; }
+#gh-fields .export-info { margin: 0 0 12px; line-height: 1.6; }
+#gh-fields .field input { font-size: 13px; }
+#gh-fields .field { margin-bottom: 10px; }
+
+.gh-result li { align-items: center; }
+.gh-result .gh-link-url {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: #7db1ff; font-size: 12px;
+}
+.gh-result .gh-copy {
+  flex: none; padding: 3px 10px; border-radius: 5px; font-size: 12px;
+  background: var(--panel-2); color: var(--text);
+}
+.gh-result .gh-copy:hover { background: var(--accent); }
+.gh-result li.is-error .gh-link-url { color: var(--danger); white-space: normal; }
+
 /* ---------------- 提示 / 忙碌 ---------------- */
 .toast {
   position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
