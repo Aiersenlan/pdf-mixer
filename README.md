@@ -9,13 +9,25 @@
 
 ## 快速開始
 
-需求：Python 3（只拿來當靜態檔案伺服器）+ 任一現代瀏覽器。
+### 線上使用（免安裝）
+
+<https://aiersenlan.github.io/pdf-mixer/>
+
+點開就能用，不用裝 Python、不用跑任何腳本、不需要系統權限。
+程式碼跟本機版完全一樣，**所有處理依然只發生在你瀏覽器的記憶體裡**，
+檔案不會被上傳到任何地方。
+
+### 本機執行
+
+需求：任一現代瀏覽器；有 Python 3 更好，沒有也可以。
 
 ```bash
 python serve.py
 ```
 
-Windows 也可以直接雙擊 `start.bat`。瀏覽器會自動開啟 <http://localhost:9321>。
+Windows 也可以直接雙擊 `start.bat`：偵測到有 Python 就用 `serve.py`，
+沒有就自動改用內建的 `serve.ps1`（純 PowerShell 寫的靜態伺服器，
+Windows 10/11 內建就能跑，不用另外安裝）。瀏覽器會自動開啟 <http://localhost:9321>。
 
 第一次想試玩的話，先產生範例檔：
 
@@ -26,7 +38,7 @@ python tools/make_samples.py
 然後在空白畫面按「載入範例檔案」，會載入 A/B/C/D 四份共 11 頁、顏色分明的測試 PDF。
 
 > 不能用 `file://` 直接開 `index.html`。瀏覽器的安全限制會擋掉 ES module 與 pdf.js 的
-> worker，程式偵測到之後會顯示提示。
+> worker，程式偵測到之後會顯示提示。線上版跑在 `https://` 之下，沒有這個限制。
 
 ---
 
@@ -95,8 +107,9 @@ python tools/make_samples.py
 │   └── pdf-lib.min.js      # pdf-lib 1.17.1（組合與輸出）
 ├── samples/                # 測試用 PDF（由 tools/make_samples.py 產生）
 ├── tools/make_samples.py   # 純標準函式庫的 PDF 產生器
-├── serve.py                # 本機靜態伺服器
-└── start.bat               # Windows 一鍵啟動
+├── serve.py                # 本機靜態伺服器（Python）
+├── serve.ps1               # 本機靜態伺服器（PowerShell，沒裝 Python 時的備援）
+└── start.bat               # Windows 一鍵啟動，自動挑上面兩個之一
 ```
 
 ### 資料模型
@@ -156,3 +169,13 @@ copied.setRotation(degrees((copied.getRotation().angle + page.rotation) % 360));
 
 - [pdf.js](https://github.com/mozilla/pdf.js) — Apache-2.0
 - [pdf-lib](https://github.com/Hopding/pdf-lib) — MIT
+
+---
+
+<p align="center">
+  <a href="https://github.com/Aiersenlan">
+    <img src="https://img.shields.io/badge/GitHub-Aiersenlan-181717?style=flat&logo=github&logoColor=white" alt="GitHub">
+  </a>
+  <br>
+  Made by <a href="https://github.com/Aiersenlan">Aiersenlan</a>
+</p>
