@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pdf-editor",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["serve.py", "9321"],
+      "port": 9321,
+      "autoPort": false
+    }
+  ]
+}
