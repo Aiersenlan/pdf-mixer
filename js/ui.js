@@ -411,6 +411,8 @@ function syncChrome() {
   expandBtn.querySelector('.ico').innerHTML = open ? ICON.collapse : ICON.expand;
   expandBtn.title = open ? '把每份文件收成一疊' : '展開所有文件的頁面';
 
+  $('#btn-collapse-selected').disabled = sel === 0 || store.view === 'files';
+
   $('#btn-view-grid').classList.toggle('is-active', store.layout === 'grid');
   $('#btn-view-list').classList.toggle('is-active', store.layout === 'list');
   const inFiles = store.view === 'files';

@@ -179,6 +179,18 @@ export function allExpanded() {
 export const hasCollapsibleGroups = () =>
   pageGroups().some((g) => g.type === 'group' && g.pages.length > 1);
 
+/**
+ * 把「目前選取的頁面所屬的群組」收合成一疊，其他群組維持原狀。
+ * @returns {number} 實際收合了幾份文件
+ */
+export function collapseSelectedGroups() {
+  const targets = pageGroups()
+    .filter((g) => g.type === 'group' && g.pages.length > 1 && g.pages.some((p) => p.selected))
+    .map(groupLeader);
+  for (const leaderId of targets) setGroupExpanded(leaderId, false);
+  return targets.length;
+}
+
 /* ---------------- 頁面操作（皆需包在 commit 內） ---------------- */
 
 /** 分割符號：不是頁面，只標記「這裡開始是下一個檔案」 */

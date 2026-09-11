@@ -8,7 +8,7 @@ import {
   makeBlankPage, makeSplit, insertPages, removePages, duplicatePage,
   rotatePages, movePages, reorderByFiles, sortPages,
   splitSegments, documentBoundaries,
-  setGroupExpanded, setExpandAll, allExpanded,
+  setGroupExpanded, setExpandAll, allExpanded, collapseSelectedGroups,
 } from './state.js';
 
 import {
@@ -36,6 +36,7 @@ const els = {
   shareProgress: $('#share-progress'),
   shareProgressText: $('#share-progress-text'),
   shareProgressCancel: $('#share-progress-cancel'),
+  marquee: $('#marquee'),
 };
 
 /** 最近一次「產生連結」成功的網址，給「複製連結」按鈕用。 */
@@ -67,6 +68,7 @@ function boot() {
   wireToolbar();
   wireSelectBar();
   wireBoard();
+  wireMarqueeSelect();
   wireDragAndDrop();
   wireKeyboard();
   wirePreview();
@@ -174,6 +176,12 @@ function wireToolbar() {
   $('#btn-expand').addEventListener('click', () => {
     setExpandAll(!allExpanded());
     render();
+  });
+
+  $('#btn-collapse-selected').addEventListener('click', () => {
+    const n = collapseSelectedGroups();
+    render();
+    toast(n ? `已收合 ${n} 份文件` : '選取的頁面沒有可以收合的文件');
   });
 
   $('#btn-empty-add').addEventListener('click', () => pickFiles(null));
@@ -302,6 +310,72 @@ function wireBoard() {
     }
     openPreview(indexOfPage(card.dataset.id));
   });
+}
+
+/* ============================================================
+   框選（按住左鍵拖出一個框，圈到的卡片都會被選取）
+   ============================================================ */
+
+function wireMarqueeSelect() {
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let additive = false;
+  let baseIds = new Set();
+
+  const isBlankTarget = (target) =>
+    !target.closest('.card, .file-row, .gap, #add-card, button, input, a, .menu');
+
+  els.workspace.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || store.view !== 'pages') return;
+    if (!isBlankTarget(e.target)) return;
+
+    dragging = true;
+    additive = e.shiftKey;
+    baseIds = additive ? new Set(selectedPages().map((p) => p.id)) : new Set();
+    startX = e.clientX;
+    startY = e.clientY;
+
+    if (!additive) {
+      for (const p of store.pages) p.selected = false;
+    }
+    paintMarquee(startX, startY, startX, startY);
+    els.marquee.hidden = false;
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    paintMarquee(startX, startY, e.clientX, e.clientY);
+
+    const x1 = Math.min(startX, e.clientX);
+    const x2 = Math.max(startX, e.clientX);
+    const y1 = Math.min(startY, e.clientY);
+    const y2 = Math.max(startY, e.clientY);
+
+    const inside = new Set(baseIds);
+    for (const card of els.board.querySelectorAll('.card')) {
+      const r = card.getBoundingClientRect();
+      if (r.left >= x2 || r.right <= x1 || r.top >= y2 || r.bottom <= y1) continue;
+      const ids = card.dataset.ids ? card.dataset.ids.split(',') : [card.dataset.id];
+      for (const id of ids) inside.add(id);
+    }
+    for (const p of store.pages) p.selected = inside.has(p.id);
+    syncSelection();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    els.marquee.hidden = true;
+  });
+}
+
+function paintMarquee(x1, y1, x2, y2) {
+  els.marquee.style.left = `${Math.min(x1, x2)}px`;
+  els.marquee.style.top = `${Math.min(y1, y2)}px`;
+  els.marquee.style.width = `${Math.abs(x2 - x1)}px`;
+  els.marquee.style.height = `${Math.abs(y2 - y1)}px`;
 }
 
 let lastClickedId = null;

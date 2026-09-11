@@ -128,6 +128,13 @@ input[type=checkbox]:checked::after {
 
 .board { display: flex; flex-wrap: wrap; align-items: flex-start; }
 
+/* ---- 框選 ---- */
+.marquee {
+  position: fixed; z-index: 40; pointer-events: none;
+  border: 1px solid var(--accent); background: rgba(22,104,227,.15);
+  border-radius: 2px;
+}
+
 /* ---- 頁面卡片 ---- */
 .card {
   width: var(--thumb-w);
