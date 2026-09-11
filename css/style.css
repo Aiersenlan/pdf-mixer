@@ -448,6 +448,17 @@ input[type=checkbox]:checked::after {
 
 [hidden] { display: none !important; }
 
+/* ---------------- GitHub 連結（右下角小圖示） ---------------- */
+.gh-link {
+  position: fixed; right: 14px; bottom: 14px; z-index: 50;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--panel); border: 1px solid var(--border);
+  color: var(--muted); box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  transition: color .15s ease, background .15s ease, transform .15s ease;
+}
+.gh-link:hover { color: var(--text); background: var(--panel-2); transform: translateY(-1px); }
+.gh-link svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+
 /* 捲軸 */
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 6px; border: 3px solid var(--bg); }

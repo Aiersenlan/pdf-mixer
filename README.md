@@ -169,13 +169,3 @@ copied.setRotation(degrees((copied.getRotation().angle + page.rotation) % 360));
 
 - [pdf.js](https://github.com/mozilla/pdf.js) — Apache-2.0
 - [pdf-lib](https://github.com/Hopding/pdf-lib) — MIT
-
----
-
-<p align="center">
-  <a href="https://github.com/Aiersenlan">
-    <img src="https://img.shields.io/badge/GitHub-Aiersenlan-181717?style=flat&logo=github&logoColor=white" alt="GitHub">
-  </a>
-  <br>
-  Made by <a href="https://github.com/Aiersenlan">Aiersenlan</a>
-</p>
