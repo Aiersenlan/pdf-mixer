@@ -646,7 +646,7 @@ async function copyShareLinks(silent) {
 function exportPlan() {
   const segments = splitSegments(store.pages);
   const names = fileOrder().map((id) => store.files.get(id).name);
-  const base = names.length === 1 ? names[0].replace(/\.[^.]+$/, '') : 'merged';
+  const base = names[0] ? names[0].replace(/\.[^.]+$/, '') : 'merged';
 
   if (segments.length <= 1) {
     return [{ name: `${base}.pdf`, pages: segments[0] ?? [] }];
