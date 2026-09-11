@@ -431,13 +431,10 @@ input[type=checkbox]:checked::after {
 .export-files li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
 .export-files li span:last-child { color: var(--muted); flex: none; }
 
-/* ---------------- GitHub 上傳區塊 ---------------- */
+/* ---------------- 分享連結區塊 ---------------- */
 .gh-section { margin: -4px 0 14px; }
 .gh-section .check-line { margin-bottom: 4px; }
-#gh-fields { padding: 12px 2px 2px; }
-#gh-fields .export-info { margin: 0 0 12px; line-height: 1.6; }
-#gh-fields .field input { font-size: 13px; }
-#gh-fields .field { margin-bottom: 10px; }
+.gh-hint { margin: 6px 0 0; padding-left: 26px; line-height: 1.6; }
 
 .gh-result li { align-items: center; }
 .gh-result .gh-link-url {

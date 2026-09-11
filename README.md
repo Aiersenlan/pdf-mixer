@@ -71,13 +71,11 @@ python tools/make_samples.py
 - 依檔名排序會清掉分割符號（重排後原本的位置已經沒有意義），排序完會提示清掉了幾個
 
 **分享連結（選用）**
-- 「完成」的匯出視窗裡勾選「同時上傳到 GitHub，產生分享連結」，會多出幾個欄位：
-  GitHub 帳號、repo、分支、資料夾、Personal Access Token（建議用 fine-grained token，
-  只給那個 repo 的 `Contents: Read and write`）
-- 送出後會透過 GitHub 的 Git Data API 把匯出的 PDF 推到指定 repo，
-  再組出對應的 GitHub Pages 網址，附一個「複製連結」按鈕
-- Token 只會直接從瀏覽器打 `api.github.com`，不會經過任何其他伺服器；
-  預設只記在這次分頁（關掉分頁就沒了），勾選「記住」才會連同 token 存進這台電腦的 `localStorage`
+- 「完成」的匯出視窗裡勾選「同時產生分享連結」，不用填任何帳號或 token，
+  按下「下載」時會多做一步：把匯出的 PDF 送到一個 Cloudflare Worker，
+  換一個公開網址，附「複製連結」按鈕——方便直接貼給 Claude 或其他人看
+- Worker 那一端才有 GitHub token（見 [`cloudflare-worker/`](cloudflare-worker/)），
+  前端完全不接觸、也不儲存任何憑證
 - **這個連結是公開的，不會過期、也沒有加密**——不要拿來放機密或客戶資料。
   它跟「本機處理」是兩條獨立的路徑：不勾選這個選項，PDF 完全不會離開瀏覽器
 
@@ -110,7 +108,7 @@ python tools/make_samples.py
 │   ├── app.js              # 事件接線與流程控制
 │   ├── state.js            # 文件模型 + 復原/重做
 │   ├── pdfio.js            # 讀檔、縮圖、匯出
-│   ├── ghupload.js         # 選用：把匯出的 PDF 推到 GitHub，換一個分享連結
+│   ├── ghupload.js         # 選用：把匯出的 PDF 送到 Worker，換一個分享連結
 │   ├── ui.js               # 把 store 畫成畫面
 │   └── dnd.js              # 拖曳排序
 ├── vendor/                 # 已下載到本機的第三方函式庫
@@ -119,6 +117,7 @@ python tools/make_samples.py
 │   └── pdf-lib.min.js      # pdf-lib 1.17.1（組合與輸出）
 ├── samples/                # 測試用 PDF（由 tools/make_samples.py 產生）
 ├── tools/make_samples.py   # 純標準函式庫的 PDF 產生器
+├── cloudflare-worker/      # 選用：「分享連結」功能的後端，見裡面的 README
 ├── serve.py                # 本機靜態伺服器（Python）
 ├── serve.ps1               # 本機靜態伺服器（PowerShell，沒裝 Python 時的備援）
 └── start.bat               # Windows 一鍵啟動，自動挑上面兩個之一

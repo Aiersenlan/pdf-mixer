@@ -17,7 +17,7 @@ import {
 
 import { render, syncSelection, toast, busy, unbusy } from './ui.js';
 import { initDnd, isDraggingInternally } from './dnd.js';
-import { uploadFileToGitHub, pagesUrlFor } from './ghupload.js';
+import { shareFile } from './ghupload.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -35,13 +35,6 @@ const els = {
   exportInfo: $('#export-info'),
   exportFiles: $('#export-files'),
   ghToggle: $('#gh-toggle'),
-  ghFields: $('#gh-fields'),
-  ghOwner: $('#gh-owner'),
-  ghRepo: $('#gh-repo'),
-  ghBranch: $('#gh-branch'),
-  ghFolder: $('#gh-folder'),
-  ghToken: $('#gh-token'),
-  ghRemember: $('#gh-remember'),
   ghResult: $('#gh-result'),
 };
 
@@ -548,10 +541,6 @@ function wireExport() {
     if (e.target === els.exportModal) els.exportModal.hidden = true;
   });
 
-  loadGhSettings();
-  els.ghToggle.addEventListener('change', () => {
-    els.ghFields.hidden = !els.ghToggle.checked;
-  });
   els.ghResult.addEventListener('click', async (e) => {
     const btn = e.target.closest('.gh-copy');
     if (!btn) return;
@@ -562,34 +551,6 @@ function wireExport() {
       toast('複製失敗，請手動選取', true);
     }
   });
-}
-
-/* ---------------- GitHub 上傳設定：存在 localStorage，只存這台電腦 ---------------- */
-
-const GH_KEY = 'pdfmix.gh.';
-
-function loadGhSettings() {
-  els.ghOwner.value = localStorage.getItem(GH_KEY + 'owner') || '';
-  els.ghRepo.value = localStorage.getItem(GH_KEY + 'repo') || '';
-  els.ghBranch.value = localStorage.getItem(GH_KEY + 'branch') || 'main';
-  els.ghFolder.value = localStorage.getItem(GH_KEY + 'folder') || '';
-  const remembered = localStorage.getItem(GH_KEY + 'remember') === '1';
-  els.ghRemember.checked = remembered;
-  if (remembered) els.ghToken.value = localStorage.getItem(GH_KEY + 'token') || '';
-}
-
-function saveGhSettings() {
-  localStorage.setItem(GH_KEY + 'owner', els.ghOwner.value.trim());
-  localStorage.setItem(GH_KEY + 'repo', els.ghRepo.value.trim());
-  localStorage.setItem(GH_KEY + 'branch', els.ghBranch.value.trim() || 'main');
-  localStorage.setItem(GH_KEY + 'folder', els.ghFolder.value.trim());
-  if (els.ghRemember.checked) {
-    localStorage.setItem(GH_KEY + 'remember', '1');
-    localStorage.setItem(GH_KEY + 'token', els.ghToken.value.trim());
-  } else {
-    localStorage.removeItem(GH_KEY + 'remember');
-    localStorage.removeItem(GH_KEY + 'token');
-  }
 }
 
 /**
@@ -677,7 +638,7 @@ async function doExport() {
       ? `已匯出 ${results[0].name}`
       : `已匯出 ${results.length} 個檔案：${results[0].name} … ${results.at(-1).name}`);
 
-    if (wantsGhUpload) await uploadResultsToGitHub(results);
+    if (wantsGhUpload) await shareResults(results);
   } catch (err) {
     console.error(err);
     toast(`匯出失敗：${err.message || err}`, true);
@@ -686,38 +647,20 @@ async function doExport() {
   }
 }
 
-/* ---------------- 上傳到 GitHub，換一個分享連結 ---------------- */
+/* ---------------- 產生分享連結 ---------------- */
 
-async function uploadResultsToGitHub(results) {
-  const owner = els.ghOwner.value.trim();
-  const repo = els.ghRepo.value.trim();
-  const branch = els.ghBranch.value.trim() || 'main';
-  const folder = els.ghFolder.value.trim().replace(/^\/+|\/+$/g, '');
-  const token = els.ghToken.value.trim();
-
-  saveGhSettings();
-
+async function shareResults(results) {
   els.ghResult.hidden = false;
   els.ghResult.replaceChildren();
 
-  if (!owner || !repo || !token) {
-    addGhResultRow(null, '請填齊 GitHub 帳號、repo 與 token，才能上傳', true);
-    return;
-  }
-
   for (const r of results) {
-    const path = folder ? `${folder}/${r.name}` : r.name;
     try {
-      busy(`正在上傳 ${r.name} 到 GitHub…`);
-      await uploadFileToGitHub({
-        owner, repo, branch, path, token,
-        bytes: r.bytes,
-        message: `新增 ${path}`,
-      });
-      addGhResultRow(pagesUrlFor({ owner, repo, path }), r.name, false);
+      busy(`正在產生 ${r.name} 的分享連結…`);
+      const url = await shareFile(r.bytes, r.name);
+      addGhResultRow(url, r.name, false);
     } catch (err) {
       console.error(err);
-      addGhResultRow(null, `${r.name} 上傳失敗：${err.message || err}`, true);
+      addGhResultRow(null, `${r.name} 分享失敗：${err.message || err}`, true);
     }
   }
 }
