@@ -32,11 +32,14 @@ const els = {
   previewTitle: $('#preview-title'),
   btnDownload: $('#btn-download'),
   btnShare: $('#btn-share'),
+  btnShareCancel: $('#btn-share-cancel'),
   btnCopyLink: $('#btn-copy-link'),
 };
 
 /** 最近一次「產生連結」成功的網址，給「複製連結」按鈕用。 */
 let lastShareUrls = [];
+/** 目前這次「產生連結」的取消把手；沒有在跑就是 null。 */
+let shareController = null;
 
 /** 由「＋」按鈕觸發的新增，記住要插在哪個位置；null 代表接在最後面 */
 let pendingInsertAt = null;
@@ -534,15 +537,21 @@ function closePreview() {
 function wireExport() {
   els.btnDownload.addEventListener('click', doDownload);
   els.btnShare.addEventListener('click', doShare);
-  els.btnCopyLink.addEventListener('click', async () => {
-    if (!lastShareUrls.length) return;
-    try {
-      await navigator.clipboard.writeText(lastShareUrls.join('\n'));
-      toast('已複製連結');
-    } catch {
-      toast('複製失敗，請手動選取', true);
-    }
-  });
+  els.btnShareCancel.addEventListener('click', () => shareController?.abort());
+  els.btnCopyLink.addEventListener('click', () => copyShareLinks(false));
+}
+
+/** @param {boolean} silent 自動複製時失敗就算了，不用跳錯誤 toast 打擾使用者 */
+async function copyShareLinks(silent) {
+  if (!lastShareUrls.length) return false;
+  try {
+    await navigator.clipboard.writeText(lastShareUrls.join('\n'));
+    if (!silent) toast('已複製連結');
+    return true;
+  } catch {
+    if (!silent) toast('複製失敗，請手動選取', true);
+    return false;
+  }
 }
 
 /**
@@ -609,7 +618,12 @@ async function doShare() {
   const plan = exportPlan().filter((f) => f.pages.length);
   if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
 
+  shareController = new AbortController();
+  const { signal } = shareController;
+
   els.btnShare.disabled = true;
+  els.btnDownload.disabled = true;
+  els.btnShareCancel.hidden = false;
   busy('正在產生 PDF…');
   try {
     const results = await buildExportResults(plan);
@@ -617,12 +631,13 @@ async function doShare() {
     let timedOut = false;
 
     for (const r of results) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
       busy(`正在產生 ${r.name} 的分享連結…`);
-      const url = await shareFile(r.bytes, r.name);
+      const url = await shareFile(r.bytes, r.name, { signal });
 
       const live = await waitUntilLive(url, (attempt) => {
         busy(`連結已產生，正在等待 GitHub Pages 部署完成…（第 ${attempt} 次確認）`);
-      });
+      }, { signal });
       if (!live) timedOut = true;
       urls.push(url);
     }
@@ -630,14 +645,25 @@ async function doShare() {
     lastShareUrls = urls;
     els.btnCopyLink.disabled = false;
     els.btnCopyLink.title = '';
+    const copied = !timedOut && await copyShareLinks(true);
+
     toast(timedOut
       ? '連結已產生，但部署好像比較久，如果打開是 404 請稍後再試'
-      : (urls.length === 1 ? '連結已產生，按「複製連結」貼給 Claude 或其他人' : `已產生 ${urls.length} 個連結`));
+      : (copied
+        ? (urls.length === 1 ? '連結已複製，貼給 Claude 或其他人' : `已產生並複製 ${urls.length} 個連結`)
+        : (urls.length === 1 ? '連結已產生，按「複製連結」貼給 Claude 或其他人' : `已產生 ${urls.length} 個連結`)));
   } catch (err) {
-    console.error(err);
-    toast(`分享失敗：${err.message || err}`, true);
+    if (err.name === 'AbortError') {
+      toast('已取消');
+    } else {
+      console.error(err);
+      toast(`分享失敗：${err.message || err}`, true);
+    }
   } finally {
+    shareController = null;
     els.btnShare.disabled = false;
+    els.btnDownload.disabled = false;
+    els.btnShareCancel.hidden = true;
     unbusy();
   }
 }
