@@ -7,7 +7,7 @@ import {
   selectedPages, pageById, indexOfPage, fileOrder,
   makeBlankPage, makeSplit, insertPages, removePages, duplicatePage,
   rotatePages, movePages, reorderByFiles, sortPages,
-  splitSegments, documentBoundaries, realPages,
+  splitSegments, documentBoundaries,
   setGroupExpanded, setExpandAll, allExpanded,
 } from './state.js';
 
@@ -17,7 +17,7 @@ import {
 
 import { render, syncSelection, toast, busy, unbusy } from './ui.js';
 import { initDnd, isDraggingInternally } from './dnd.js';
-import { shareFile } from './ghupload.js';
+import { shareFile, waitUntilLive } from './ghupload.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -30,13 +30,13 @@ const els = {
   preview: $('#preview-modal'),
   previewCanvas: $('#preview-canvas'),
   previewTitle: $('#preview-title'),
-  exportModal: $('#export-modal'),
-  exportName: $('#export-name'),
-  exportInfo: $('#export-info'),
-  exportFiles: $('#export-files'),
-  exportShare: $('#export-share'),
-  ghResult: $('#gh-result'),
+  btnDownload: $('#btn-download'),
+  btnShare: $('#btn-share'),
+  btnCopyLink: $('#btn-copy-link'),
 };
+
+/** 最近一次「產生連結」成功的網址，給「複製連結」按鈕用。 */
+let lastShareUrls = [];
 
 /** 由「＋」按鈕觸發的新增，記住要插在哪個位置；null 代表接在最後面 */
 let pendingInsertAt = null;
@@ -171,7 +171,6 @@ function wireToolbar() {
     render();
   });
 
-  $('#btn-done').addEventListener('click', openExport);
   $('#btn-empty-add').addEventListener('click', () => pickFiles(null));
   $('#btn-load-samples').addEventListener('click', loadSamples);
 }
@@ -455,7 +454,6 @@ function wireKeyboard() {
 
     if (e.key === 'Escape') {
       if (!els.preview.hidden) { closePreview(); return; }
-      if (!els.exportModal.hidden) { els.exportModal.hidden = true; return; }
       closeAllMenus();
       for (const p of store.pages) p.selected = false;
       syncSelection();
@@ -534,19 +532,12 @@ function closePreview() {
    ============================================================ */
 
 function wireExport() {
-  $('#export-cancel').addEventListener('click', () => { els.exportModal.hidden = true; });
-  $('#export-go').addEventListener('click', doDownload);
-  els.exportShare.addEventListener('click', doShare);
-  els.exportName.addEventListener('input', renderExportList);
-  els.exportModal.addEventListener('click', (e) => {
-    if (e.target === els.exportModal) els.exportModal.hidden = true;
-  });
-
-  els.ghResult.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.gh-copy');
-    if (!btn) return;
+  els.btnDownload.addEventListener('click', doDownload);
+  els.btnShare.addEventListener('click', doShare);
+  els.btnCopyLink.addEventListener('click', async () => {
+    if (!lastShareUrls.length) return;
     try {
-      await navigator.clipboard.writeText(btn.dataset.url);
+      await navigator.clipboard.writeText(lastShareUrls.join('\n'));
       toast('已複製連結');
     } catch {
       toast('複製失敗，請手動選取', true);
@@ -555,12 +546,13 @@ function wireExport() {
 }
 
 /**
- * 依分割符號決定要輸出幾個檔案，以及各自的檔名。
- * 只有一段時就用使用者輸入的名字，多段時自動加上 _1、_2…
+ * 依分割符號決定要輸出幾個檔案，以及各自的檔名：單一檔案沿用原檔名，
+ * 多個來源檔案時用「merged」，有分割符號時再加上 _1、_2…
  */
 function exportPlan() {
   const segments = splitSegments(store.pages);
-  const base = els.exportName.value.trim().replace(/\.pdf$/i, '') || 'merged';
+  const names = fileOrder().map((id) => store.files.get(id).name);
+  const base = names.length === 1 ? names[0].replace(/\.[^.]+$/, '') : 'merged';
 
   if (segments.length <= 1) {
     return [{ name: `${base}.pdf`, pages: segments[0] ?? [] }];
@@ -570,44 +562,6 @@ function exportPlan() {
     name: `${base}_${String(i + 1).padStart(width, '0')}.pdf`,
     pages,
   }));
-}
-
-function renderExportList() {
-  const plan = exportPlan();
-  if (plan.length <= 1) { els.exportFiles.hidden = true; return; }
-
-  els.exportFiles.replaceChildren(...plan.map((f) => {
-    const li = document.createElement('li');
-    const name = document.createElement('span');
-    name.textContent = f.name;
-    const count = document.createElement('span');
-    count.textContent = `${f.pages.length} 頁`;
-    li.append(name, count);
-    return li;
-  }));
-  els.exportFiles.hidden = false;
-}
-
-function openExport() {
-  const pageCount = realPages().length;
-  if (!pageCount) return;
-
-  const names = fileOrder().map((id) => store.files.get(id).name);
-  const segments = splitSegments(store.pages);
-  const base = names.length === 1 ? names[0].replace(/\.[^.]+$/, '') : 'merged';
-
-  els.exportName.value = `${base}.pdf`;
-  els.exportInfo.textContent = segments.length > 1
-    ? `共 ${pageCount} 頁，依 ${segments.length - 1} 個分割符號輸出成 ${segments.length} 個 PDF。`
-      + '瀏覽器可能會詢問是否允許一次下載多個檔案。'
-    : `共 ${pageCount} 頁，來自 ${names.length} 個檔案。整份 PDF 在你的瀏覽器內組成，不會上傳。`;
-
-  renderExportList();
-  els.ghResult.hidden = true;
-  els.ghResult.replaceChildren();
-  els.exportModal.hidden = false;
-  els.exportName.focus();
-  els.exportName.setSelectionRange(0, els.exportName.value.replace(/\.pdf$/i, '').length);
 }
 
 /** 把目前的匯出計畫實際組成 PDF 位元組，共用給下載跟分享兩個按鈕。 */
@@ -626,8 +580,7 @@ async function buildExportResults(plan) {
 
 async function doDownload() {
   const plan = exportPlan().filter((f) => f.pages.length);
-  if (!plan.length) return;
-  els.exportModal.hidden = true;
+  if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
 
   busy('正在產生 PDF…');
   try {
@@ -654,51 +607,39 @@ async function doDownload() {
 
 async function doShare() {
   const plan = exportPlan().filter((f) => f.pages.length);
-  if (!plan.length) return;
+  if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
 
-  els.ghResult.hidden = false;
-  els.ghResult.replaceChildren();
-
+  els.btnShare.disabled = true;
   busy('正在產生 PDF…');
   try {
     const results = await buildExportResults(plan);
+    const urls = [];
+    let timedOut = false;
 
     for (const r of results) {
-      try {
-        busy(`正在產生 ${r.name} 的分享連結…`);
-        const url = await shareFile(r.bytes, r.name);
-        addGhResultRow(url, r.name, false);
-      } catch (err) {
-        console.error(err);
-        addGhResultRow(null, `${r.name} 分享失敗：${err.message || err}`, true);
-      }
+      busy(`正在產生 ${r.name} 的分享連結…`);
+      const url = await shareFile(r.bytes, r.name);
+
+      const live = await waitUntilLive(url, (attempt) => {
+        busy(`連結已產生，正在等待 GitHub Pages 部署完成…（第 ${attempt} 次確認）`);
+      });
+      if (!live) timedOut = true;
+      urls.push(url);
     }
+
+    lastShareUrls = urls;
+    els.btnCopyLink.disabled = false;
+    els.btnCopyLink.title = '';
+    toast(timedOut
+      ? '連結已產生，但部署好像比較久，如果打開是 404 請稍後再試'
+      : (urls.length === 1 ? '連結已產生，按「複製連結」貼給 Claude 或其他人' : `已產生 ${urls.length} 個連結`));
   } catch (err) {
     console.error(err);
-    toast(`匯出失敗：${err.message || err}`, true);
+    toast(`分享失敗：${err.message || err}`, true);
   } finally {
+    els.btnShare.disabled = false;
     unbusy();
   }
-}
-
-function addGhResultRow(url, label, isError) {
-  const li = document.createElement('li');
-  if (isError) li.classList.add('is-error');
-
-  const text = document.createElement('span');
-  text.className = 'gh-link-url';
-  text.textContent = url || label;
-  li.append(text);
-
-  if (url) {
-    const copy = document.createElement('button');
-    copy.className = 'gh-copy';
-    copy.type = 'button';
-    copy.textContent = '複製連結';
-    copy.dataset.url = url;
-    li.append(copy);
-  }
-  els.ghResult.append(li);
 }
 
 /* ============================================================

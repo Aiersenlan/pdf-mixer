@@ -398,7 +398,8 @@ function syncChrome() {
   $('#btn-redo').disabled = !canRedo();
   $('#btn-delete').disabled = sel === 0;
   $('#btn-rotate').disabled = sel === 0;
-  $('#btn-done').disabled = pageCount === 0;
+  $('#btn-download').disabled = pageCount === 0;
+  $('#btn-share').disabled = pageCount === 0;
 
   for (const tab of document.querySelectorAll('.tab')) {
     tab.classList.toggle('is-active', tab.dataset.view === store.view);

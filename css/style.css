@@ -60,8 +60,6 @@ button:disabled { opacity: .38; cursor: default; }
 }
 .icon-btn:hover { background: var(--panel-2); color: var(--text); }
 
-.badge-pro { font-size: 12px; color: var(--muted); }
-
 .btn-primary {
   background: var(--accent); color: #fff; font-weight: 600;
   padding: 9px 30px; border-radius: 6px;
@@ -411,42 +409,6 @@ input[type=checkbox]:checked::after {
 .modal-body { flex: 1; display: grid; place-items: center; overflow: auto; padding: 20px; }
 .modal-body canvas { max-width: 100%; max-height: 100%; background: #fff;
                      box-shadow: 0 6px 30px rgba(0,0,0,.7); }
-
-#export-modal { display: grid; place-items: center; }
-.export-card { width: 380px; background: var(--panel); border: 1px solid var(--border);
-               border-radius: 12px; padding: 22px 24px; }
-.export-card h2 { margin: 0 0 16px; font-size: 17px; }
-.field { display: block; margin-bottom: 14px; }
-.field span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-.field input { width: 100%; padding: 9px 11px; background: #1b1b1b; color: var(--text);
-               border: 1px solid var(--border); border-radius: 6px; }
-.field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-.export-info { font-size: 12px; color: var(--muted); margin: 0 0 18px; }
-.export-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.export-files {
-  list-style: none; margin: 0 0 18px; padding: 10px 12px; max-height: 148px; overflow: auto;
-  background: #1b1b1b; border: 1px solid var(--border); border-radius: 6px;
-  font-size: 12px; color: #c8ccd0;
-}
-.export-files li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
-.export-files li span:last-child { color: var(--muted); flex: none; }
-
-/* ---------------- 分享連結區塊 ---------------- */
-.gh-section { margin: -4px 0 14px; }
-.gh-section .check-line { margin-bottom: 4px; }
-.gh-hint { margin: 6px 0 0; padding-left: 26px; line-height: 1.6; }
-
-.gh-result li { align-items: center; }
-.gh-result .gh-link-url {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; color: #7db1ff; font-size: 12px;
-}
-.gh-result .gh-copy {
-  flex: none; padding: 3px 10px; border-radius: 5px; font-size: 12px;
-  background: var(--panel-2); color: var(--text);
-}
-.gh-result .gh-copy:hover { background: var(--accent); }
-.gh-result li.is-error .gh-link-url { color: var(--danger); white-space: normal; }
 
 /* ---------------- 提示 / 忙碌 ---------------- */
 .toast {

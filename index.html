@@ -18,8 +18,9 @@
     <h1 class="app-title">合併</h1>
   </div>
   <div class="topbar-right">
-    <span class="badge-pro" title="此工具完全在本機執行，無需上傳">🔒 100% 本機處理</span>
-    <button class="btn-primary" id="btn-done">完成 <span class="arrow">→</span></button>
+    <button class="btn-ghost" id="btn-copy-link" disabled title="先按「產生連結」才能複製">複製連結</button>
+    <button class="btn-ghost" id="btn-share">產生連結</button>
+    <button class="btn-primary" id="btn-download">下載檔案</button>
   </div>
 </header>
 
@@ -149,33 +150,6 @@
     </div>
   </div>
   <div class="modal-body"><canvas id="preview-canvas"></canvas></div>
-</div>
-
-<!-- 匯出對話框 -->
-<div class="modal" id="export-modal" hidden>
-  <div class="export-card">
-    <h2>匯出 PDF</h2>
-    <label class="field">
-      <span>檔案名稱</span>
-      <input type="text" id="export-name" value="merged.pdf">
-    </label>
-    <p class="export-info" id="export-info"></p>
-    <ul class="export-files" id="export-files" hidden></ul>
-
-    <div class="gh-section">
-      <p class="export-info gh-hint">
-        「產生連結」會公開發布這份 PDF，換一個誰都能打開的網址——方便直接貼給 Claude
-        或其他人看。連結不會過期、也沒有加密，請不要拿來放機密文件。
-      </p>
-      <ul class="export-files gh-result" id="gh-result" hidden></ul>
-    </div>
-
-    <div class="export-actions">
-      <button class="btn-ghost" id="export-cancel">取消</button>
-      <button class="btn-ghost" id="export-share">產生連結</button>
-      <button class="btn-primary" id="export-go">下載檔案</button>
-    </div>
-  </div>
 </div>
 
 <a class="gh-link" href="https://github.com/Aiersenlan/pdf-mixer" target="_blank" rel="noopener" title="原始碼在 GitHub">
