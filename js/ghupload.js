@@ -6,8 +6,7 @@
    使用者只要按一個勾選框就能用。部署方式見 cloudflare-worker/README.md。
    ============================================================ */
 
-// 部署好 Worker 之後，把這裡換成實際的網址（cloudflare-worker/README.md 步驟 2）。
-const SHARE_ENDPOINT = 'https://pdf-mixer-share.YOUR-SUBDOMAIN.workers.dev';
+const SHARE_ENDPOINT = 'https://dric-pdf-mixer.aiersen-ke.workers.dev/';
 
 /**
  * @param {Uint8Array} bytes
