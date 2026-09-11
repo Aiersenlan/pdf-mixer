@@ -19,7 +19,6 @@
   </div>
   <div class="topbar-right">
     <button class="btn-ghost" id="btn-copy-link" disabled title="先按「產生連結」才能複製">複製連結</button>
-    <button class="btn-ghost" id="btn-share-cancel" hidden>取消</button>
     <button class="btn-ghost" id="btn-share">產生連結</button>
     <button class="btn-primary" id="btn-download">下載檔案</button>
   </div>
@@ -159,6 +158,17 @@
 
 <div class="toast" id="toast" hidden></div>
 <div class="busy" id="busy" hidden><div class="spinner"></div><span id="busy-text">處理中…</span></div>
+
+<!-- 產生分享連結的等待畫面：動畫跟「取消」都在這裡面，不會被其他遮罩擋住 -->
+<div class="share-progress" id="share-progress" hidden>
+  <div class="share-progress-card">
+    <svg class="tri-spin" viewBox="0 0 100 100" aria-hidden="true">
+      <polygon points="50,8 92,84 8,84"/>
+    </svg>
+    <p id="share-progress-text">正在建立 PDF…</p>
+    <button class="btn-ghost" id="share-progress-cancel">取消</button>
+  </div>
+</div>
 
 <input type="file" id="file-input" accept="application/pdf,image/png,image/jpeg,image/webp" multiple hidden>
 

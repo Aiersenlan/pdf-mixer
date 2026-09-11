@@ -425,6 +425,31 @@ input[type=checkbox]:checked::after {
 .spinner { width: 34px; height: 34px; border: 3px solid #444; border-top-color: var(--accent);
            border-radius: 50%; animation: spin .8s linear infinite; }
 
+/* ---------------- 分享連結的等待畫面 ---------------- */
+.share-progress {
+  position: fixed; inset: 0; z-index: 360; background: rgba(0,0,0,.72);
+  display: flex; align-items: center; justify-content: center;
+}
+.share-progress-card {
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  padding: 36px 40px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.6); max-width: 320px;
+}
+.tri-spin { width: 52px; height: 52px; }
+.tri-spin polygon {
+  fill: var(--accent);
+  transform-origin: 50px 60px;
+  animation: tri-spin 1.4s ease-in-out infinite;
+}
+@keyframes tri-spin {
+  0%   { transform: rotate(0deg)   scale(1);    fill: var(--accent); }
+  50%  { transform: rotate(180deg) scale(.82);  fill: var(--accent-h); }
+  100% { transform: rotate(360deg) scale(1);    fill: var(--accent); }
+}
+#share-progress-text {
+  margin: 0; text-align: center; font-size: 13px; line-height: 1.6; color: var(--text);
+}
+
 [hidden] { display: none !important; }
 
 /* ---------------- GitHub 連結（右下角小圖示） ---------------- */

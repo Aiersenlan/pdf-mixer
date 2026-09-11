@@ -32,8 +32,10 @@ const els = {
   previewTitle: $('#preview-title'),
   btnDownload: $('#btn-download'),
   btnShare: $('#btn-share'),
-  btnShareCancel: $('#btn-share-cancel'),
   btnCopyLink: $('#btn-copy-link'),
+  shareProgress: $('#share-progress'),
+  shareProgressText: $('#share-progress-text'),
+  shareProgressCancel: $('#share-progress-cancel'),
 };
 
 /** 最近一次「產生連結」成功的網址，給「複製連結」按鈕用。 */
@@ -537,8 +539,17 @@ function closePreview() {
 function wireExport() {
   els.btnDownload.addEventListener('click', doDownload);
   els.btnShare.addEventListener('click', doShare);
-  els.btnShareCancel.addEventListener('click', () => shareController?.abort());
+  els.shareProgressCancel.addEventListener('click', () => shareController?.abort());
   els.btnCopyLink.addEventListener('click', () => copyShareLinks(false));
+}
+
+function shareBusy(text) {
+  els.shareProgressText.textContent = text;
+  els.shareProgress.hidden = false;
+}
+
+function shareUnbusy() {
+  els.shareProgress.hidden = true;
 }
 
 /** @param {boolean} silent 自動複製時失敗就算了，不用跳錯誤 toast 打擾使用者 */
@@ -574,13 +585,13 @@ function exportPlan() {
 }
 
 /** 把目前的匯出計畫實際組成 PDF 位元組，共用給下載跟分享兩個按鈕。 */
-async function buildExportResults(plan) {
+async function buildExportResults(plan, onProgress) {
   const totalPages = plan.reduce((n, f) => n + f.pages.length, 0);
   let done = 0;
   const results = [];
   for (const f of plan) {
     const bytes = await exportPdf(f.pages, () => {
-      busy(`正在產生 PDF… ${++done}/${totalPages} 頁`);
+      onProgress(`正在建立 PDF… ${++done}/${totalPages} 頁`);
     });
     results.push({ name: f.name, bytes });
   }
@@ -591,9 +602,9 @@ async function doDownload() {
   const plan = exportPlan().filter((f) => f.pages.length);
   if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
 
-  busy('正在產生 PDF…');
+  busy('正在建立 PDF…');
   try {
-    const results = await buildExportResults(plan);
+    const results = await buildExportResults(plan, busy);
 
     // 連續觸發下載中間留一點間隔，瀏覽器才不會把後面的當成彈出視窗擋掉
     for (let i = 0; i < results.length; i++) {
@@ -623,20 +634,19 @@ async function doShare() {
 
   els.btnShare.disabled = true;
   els.btnDownload.disabled = true;
-  els.btnShareCancel.hidden = false;
-  busy('正在產生 PDF…');
+  shareBusy('正在建立 PDF…');
   try {
-    const results = await buildExportResults(plan);
+    const results = await buildExportResults(plan, shareBusy);
     const urls = [];
     let timedOut = false;
 
     for (const r of results) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      busy(`正在產生 ${r.name} 的分享連結…`);
+      shareBusy(`正在上傳 ${r.name}…`);
       const url = await shareFile(r.bytes, r.name, { signal });
 
       const live = await waitUntilLive(url, (attempt) => {
-        busy(`連結已產生，正在等待 GitHub Pages 部署完成…（第 ${attempt} 次確認）`);
+        shareBusy(`正在等待 PDF 建立完成…（第 ${attempt} 次確認）`);
       }, { signal });
       if (!live) timedOut = true;
       urls.push(url);
@@ -663,8 +673,7 @@ async function doShare() {
     shareController = null;
     els.btnShare.disabled = false;
     els.btnDownload.disabled = false;
-    els.btnShareCancel.hidden = true;
-    unbusy();
+    shareUnbusy();
   }
 }
 
