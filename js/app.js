@@ -628,6 +628,10 @@ async function doExport() {
       results.push({ name: f.name, bytes });
     }
 
+    // 分享連結要在觸發本機下載之前做完：本機下載可能跳出「另存新檔」對話框，
+    // 對話框開著時分頁容易被瀏覽器當成背景分頁，還沒完成的網路請求可能被延遲或取消。
+    if (wantsGhUpload) await shareResults(results);
+
     // 連續觸發下載中間留一點間隔，瀏覽器才不會把後面的當成彈出視窗擋掉
     for (let i = 0; i < results.length; i++) {
       downloadBytes(results[i].bytes, results[i].name);
@@ -637,8 +641,6 @@ async function doExport() {
     toast(results.length === 1
       ? `已匯出 ${results[0].name}`
       : `已匯出 ${results.length} 個檔案：${results[0].name} … ${results.at(-1).name}`);
-
-    if (wantsGhUpload) await shareResults(results);
   } catch (err) {
     console.error(err);
     toast(`匯出失敗：${err.message || err}`, true);
