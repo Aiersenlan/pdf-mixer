@@ -17,7 +17,7 @@ import {
 
 import { render, syncSelection, toast, busy, unbusy } from './ui.js';
 import { initDnd, isDraggingInternally } from './dnd.js';
-import { shareFile, waitUntilLive } from './ghupload.js';
+import { shareFiles, waitUntilLive } from './ghupload.js';
 
 const $ = (s) => document.querySelector(s);
 
@@ -711,20 +711,16 @@ async function doShare() {
   shareBusy('正在建立 PDF…');
   try {
     const results = await buildExportResults(plan, shareBusy);
-    const urls = [];
-    let timedOut = false;
 
-    for (const r of results) {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      shareBusy(`正在上傳 ${r.name}…`);
-      const url = await shareFile(r.bytes, r.name, { signal });
+    shareBusy(results.length === 1 ? `正在上傳 ${results[0].name}…` : `正在上傳 ${results.length} 個檔案…`);
+    const urls = await shareFiles(results, { signal });
 
-      const live = await waitUntilLive(url, (attempt) => {
-        shareBusy(`正在等待 PDF 建立完成…（第 ${attempt} 次確認）`);
-      }, { signal });
-      if (!live) timedOut = true;
-      urls.push(url);
-    }
+    // 所有檔案是同一個 commit，只要其中一個網址確認上線，
+    // 代表這個 commit（也就是全部檔案）都已經部署完成。
+    const live = await waitUntilLive(urls[urls.length - 1], (attempt) => {
+      shareBusy(`正在等待 PDF 建立完成…（第 ${attempt} 次確認）`);
+    }, { signal });
+    const timedOut = !live;
 
     lastShareUrls = urls;
     els.btnCopyLink.disabled = false;

@@ -8,20 +8,30 @@
 
 const SHARE_ENDPOINT = 'https://dric-pdf-mixer.aiersen-ke.workers.dev/';
 
+/** 大檔案不能直接 String.fromCharCode(...bytes)，call stack 會爆，分段處理 */
+function toBase64(bytes) {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 /**
- * @param {Uint8Array} bytes
- * @param {string} filename
+ * 一次把多個檔案送出去，Worker 那邊會合併成同一個 commit、只觸發一次
+ * GitHub Pages 重新建置——不管分享幾個檔案，只需要等一次部署。
+ * @param {{name: string, bytes: Uint8Array}[]} files
  * @param {{signal?: AbortSignal}} [opts]
- * @returns {Promise<string>} 分享連結
+ * @returns {Promise<string[]>} 分享連結，順序跟輸入的 files 一致
  */
-export async function shareFile(bytes, filename, { signal } = {}) {
+export async function shareFiles(files, { signal } = {}) {
   const res = await fetch(SHARE_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/pdf',
-      'X-Filename': filename,
-    },
-    body: bytes,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: files.map((f) => ({ filename: f.name, content: toBase64(f.bytes) })),
+    }),
     signal,
   });
 
@@ -32,7 +42,7 @@ export async function shareFile(bytes, filename, { signal } = {}) {
     throw new Error(`分享失敗（${res.status}）`);
   }
   if (!res.ok || json.error) throw new Error(json.error || `分享失敗（${res.status}）`);
-  return json.url;
+  return json.urls;
 }
 
 /** 可以被 AbortSignal 中斷的 setTimeout。 */

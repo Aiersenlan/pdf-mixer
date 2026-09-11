@@ -1,20 +1,28 @@
 /**
  * pdf-mixer 的「分享連結」proxy。
  *
- * 前端把匯出的 PDF 原始位元組直接 POST 過來，這裡用只存在 Cloudflare
- * 這一端的 GitHub token 把檔案推到指定 repo，回傳對應的 GitHub Pages 網址。
+ * 前端把匯出的 PDF（可能不只一份，例如切成好幾個檔案）以 JSON 送過來，
+ * 這裡用只存在 Cloudflare 這一端的 GitHub token，一次 commit 把全部檔案
+ * 推到指定 repo，回傳每個檔案對應的 GitHub Pages 網址。
  * Token 永遠不會出現在瀏覽器、原始碼或任何回應裡。
+ *
+ * 一次 commit 塞完所有檔案，而不是每個檔案各自 commit，是為了：
+ *   - 只觸發一次 GitHub Pages 重新建置，而不是 N 次
+ *   - 多個檔案不會互搶同一個 git ref（原本各自 commit 時偶爾會撞車）
+ *   - 呼叫端只需要對其中一個網址做「等部署完成」的輪詢，其餘網址跟著同一個
+ *     commit 一起上線
  *
  * 部署方式見同目錄下的 README.md。
  */
 
-const MAX_BYTES = 25 * 1024 * 1024; // 25MB，超過就拒絕，避免被拿來塞大檔案濫用
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25MB，超過就拒絕，避免被拿來塞大檔案濫用
+const MAX_FILES = 30; // 一次分享的檔案數上限，避免離譜的濫用
 
 function corsHeaders(origin, allowedOrigin) {
   return {
     'Access-Control-Allow-Origin': origin === allowedOrigin ? origin : allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Filename',
+    'Access-Control-Allow-Headers': 'Content-Type',
   };
 }
 
@@ -25,14 +33,11 @@ function safeFilename(name) {
   return cleaned.toLowerCase().endsWith('.pdf') ? cleaned : `${cleaned}.pdf`;
 }
 
-/** 大檔案不能直接 String.fromCharCode(...bytes)，call stack 會爆，分段處理 */
-function toBase64(bytes) {
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+/** base64 字串解碼後的位元組數，用來檢查總大小，不用真的解碼出來 */
+function base64ByteLength(b64) {
+  const len = b64.length;
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.floor((len * 3) / 4) - padding;
 }
 
 async function gh(env, path, options = {}) {
@@ -53,36 +58,52 @@ async function gh(env, path, options = {}) {
   return res.status === 204 ? null : res.json();
 }
 
-/** 用 Git Data API（blob → tree → commit → ref）新增一個檔案，不受 Contents API 1MB 限制 */
-async function pushFile(env, path, bytes) {
+/**
+ * 用 Git Data API（blob → tree → commit → ref）一次新增多個檔案。
+ * 每個檔案各自的 blob 建立可以平行做（互不影響），
+ * 但 tree → commit → ref 一定要照順序，才是「一次 commit」。
+ * @param {{filename: string, content: string}[]} items content 是 base64
+ * @returns {Promise<string[]>} 依輸入順序回傳每個檔案最終的路徑
+ */
+async function pushFiles(env, items) {
   const base = `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}`;
+  const folder = (env.GITHUB_FOLDER || '').replace(/^\/+|\/+$/g, '');
+  const stamp = Date.now().toString(36); // 避免不同次分享互相覆蓋
+  const paths = items.map((it) => (folder ? `${folder}/${stamp}-${it.filename}` : `${stamp}-${it.filename}`));
 
-  const ref = await gh(env, `${base}/git/ref/heads/${env.GITHUB_BRANCH}`);
+  const [ref, blobs] = await Promise.all([
+    gh(env, `${base}/git/ref/heads/${env.GITHUB_BRANCH}`),
+    Promise.all(items.map((it) => gh(env, `${base}/git/blobs`, {
+      method: 'POST',
+      body: JSON.stringify({ content: it.content, encoding: 'base64' }),
+    }))),
+  ]);
   const commitSha = ref.object.sha;
   const baseCommit = await gh(env, `${base}/git/commits/${commitSha}`);
-
-  const blob = await gh(env, `${base}/git/blobs`, {
-    method: 'POST',
-    body: JSON.stringify({ content: toBase64(bytes), encoding: 'base64' }),
-  });
 
   const tree = await gh(env, `${base}/git/trees`, {
     method: 'POST',
     body: JSON.stringify({
       base_tree: baseCommit.tree.sha,
-      tree: [{ path, mode: '100644', type: 'blob', sha: blob.sha }],
+      tree: paths.map((path, i) => ({ path, mode: '100644', type: 'blob', sha: blobs[i].sha })),
     }),
   });
 
   const newCommit = await gh(env, `${base}/git/commits`, {
     method: 'POST',
-    body: JSON.stringify({ message: `分享：新增 ${path}`, tree: tree.sha, parents: [commitSha] }),
+    body: JSON.stringify({
+      message: items.length === 1 ? `分享：新增 ${paths[0]}` : `分享：新增 ${items.length} 個檔案`,
+      tree: tree.sha,
+      parents: [commitSha],
+    }),
   });
 
   await gh(env, `${base}/git/refs/heads/${env.GITHUB_BRANCH}`, {
     method: 'PATCH',
     body: JSON.stringify({ sha: newCommit.sha }),
   });
+
+  return paths;
 }
 
 /** `<owner>.github.io` 這種使用者站點服務在根目錄，其他 repo 會多一層 `/repo/` */
@@ -106,19 +127,25 @@ export default {
     }
 
     try {
-      const buf = await request.arrayBuffer();
-      if (buf.byteLength === 0) throw new Error('沒有收到檔案內容');
-      if (buf.byteLength > MAX_BYTES) throw new Error('檔案太大（上限 25MB）');
+      const body = await request.json();
+      const files = Array.isArray(body?.files) ? body.files : [];
+      if (!files.length) throw new Error('沒有收到檔案內容');
+      if (files.length > MAX_FILES) throw new Error(`一次最多分享 ${MAX_FILES} 個檔案`);
 
-      const filename = safeFilename(request.headers.get('X-Filename'));
-      const folder = (env.GITHUB_FOLDER || '').replace(/^\/+|\/+$/g, '');
-      // 時間戳前綴避免不同人上傳同名檔案時互相覆蓋
-      const stamp = Date.now().toString(36);
-      const path = folder ? `${folder}/${stamp}-${filename}` : `${stamp}-${filename}`;
+      let totalBytes = 0;
+      const items = files.map((f) => {
+        if (typeof f.content !== 'string' || !f.content) throw new Error('檔案內容格式錯誤');
+        totalBytes += base64ByteLength(f.content);
+        return { filename: safeFilename(f.filename), content: f.content };
+      });
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        throw new Error(`檔案太大（上限 ${Math.floor(MAX_TOTAL_BYTES / 1024 / 1024)}MB）`);
+      }
 
-      await pushFile(env, path, new Uint8Array(buf));
+      const paths = await pushFiles(env, items);
+      const urls = paths.map((path) => pagesUrl(env, path));
 
-      return new Response(JSON.stringify({ url: pagesUrl(env, path) }), {
+      return new Response(JSON.stringify({ urls }), {
         status: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
       });
