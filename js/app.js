@@ -34,7 +34,7 @@ const els = {
   exportName: $('#export-name'),
   exportInfo: $('#export-info'),
   exportFiles: $('#export-files'),
-  ghToggle: $('#gh-toggle'),
+  exportShare: $('#export-share'),
   ghResult: $('#gh-result'),
 };
 
@@ -535,7 +535,8 @@ function closePreview() {
 
 function wireExport() {
   $('#export-cancel').addEventListener('click', () => { els.exportModal.hidden = true; });
-  $('#export-go').addEventListener('click', doExport);
+  $('#export-go').addEventListener('click', doDownload);
+  els.exportShare.addEventListener('click', doShare);
   els.exportName.addEventListener('input', renderExportList);
   els.exportModal.addEventListener('click', (e) => {
     if (e.target === els.exportModal) els.exportModal.hidden = true;
@@ -609,28 +610,28 @@ function openExport() {
   els.exportName.setSelectionRange(0, els.exportName.value.replace(/\.pdf$/i, '').length);
 }
 
-async function doExport() {
+/** 把目前的匯出計畫實際組成 PDF 位元組，共用給下載跟分享兩個按鈕。 */
+async function buildExportResults(plan) {
+  const totalPages = plan.reduce((n, f) => n + f.pages.length, 0);
+  let done = 0;
+  const results = [];
+  for (const f of plan) {
+    const bytes = await exportPdf(f.pages, () => {
+      busy(`正在產生 PDF… ${++done}/${totalPages} 頁`);
+    });
+    results.push({ name: f.name, bytes });
+  }
+  return results;
+}
+
+async function doDownload() {
   const plan = exportPlan().filter((f) => f.pages.length);
   if (!plan.length) return;
-  const wantsGhUpload = els.ghToggle.checked;
   els.exportModal.hidden = true;
 
   busy('正在產生 PDF…');
   try {
-    const totalPages = plan.reduce((n, f) => n + f.pages.length, 0);
-    let done = 0;
-    const results = [];
-
-    for (const f of plan) {
-      const bytes = await exportPdf(f.pages, () => {
-        busy(`正在產生 PDF… ${++done}/${totalPages} 頁`);
-      });
-      results.push({ name: f.name, bytes });
-    }
-
-    // 分享連結要在觸發本機下載之前做完：本機下載可能跳出「另存新檔」對話框，
-    // 對話框開著時分頁容易被瀏覽器當成背景分頁，還沒完成的網路請求可能被延遲或取消。
-    if (wantsGhUpload) await shareResults(results);
+    const results = await buildExportResults(plan);
 
     // 連續觸發下載中間留一點間隔，瀏覽器才不會把後面的當成彈出視窗擋掉
     for (let i = 0; i < results.length; i++) {
@@ -651,19 +652,32 @@ async function doExport() {
 
 /* ---------------- 產生分享連結 ---------------- */
 
-async function shareResults(results) {
+async function doShare() {
+  const plan = exportPlan().filter((f) => f.pages.length);
+  if (!plan.length) return;
+
   els.ghResult.hidden = false;
   els.ghResult.replaceChildren();
 
-  for (const r of results) {
-    try {
-      busy(`正在產生 ${r.name} 的分享連結…`);
-      const url = await shareFile(r.bytes, r.name);
-      addGhResultRow(url, r.name, false);
-    } catch (err) {
-      console.error(err);
-      addGhResultRow(null, `${r.name} 分享失敗：${err.message || err}`, true);
+  busy('正在產生 PDF…');
+  try {
+    const results = await buildExportResults(plan);
+
+    for (const r of results) {
+      try {
+        busy(`正在產生 ${r.name} 的分享連結…`);
+        const url = await shareFile(r.bytes, r.name);
+        addGhResultRow(url, r.name, false);
+      } catch (err) {
+        console.error(err);
+        addGhResultRow(null, `${r.name} 分享失敗：${err.message || err}`, true);
+      }
     }
+  } catch (err) {
+    console.error(err);
+    toast(`匯出失敗：${err.message || err}`, true);
+  } finally {
+    unbusy();
   }
 }
 

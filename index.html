@@ -163,20 +163,17 @@
     <ul class="export-files" id="export-files" hidden></ul>
 
     <div class="gh-section">
-      <label class="check-line">
-        <input type="checkbox" id="gh-toggle">
-        <span>同時產生分享連結</span>
-      </label>
       <p class="export-info gh-hint">
-        會公開發布這份 PDF，換一個誰都能打開的網址——方便直接貼給 Claude 或其他人看。
-        連結不會過期、也沒有加密，請不要拿來放機密文件。
+        「產生連結」會公開發布這份 PDF，換一個誰都能打開的網址——方便直接貼給 Claude
+        或其他人看。連結不會過期、也沒有加密，請不要拿來放機密文件。
       </p>
       <ul class="export-files gh-result" id="gh-result" hidden></ul>
     </div>
 
     <div class="export-actions">
       <button class="btn-ghost" id="export-cancel">取消</button>
-      <button class="btn-primary" id="export-go">下載</button>
+      <button class="btn-ghost" id="export-share">產生連結</button>
+      <button class="btn-primary" id="export-go">下載檔案</button>
     </div>
   </div>
 </div>
