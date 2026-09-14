@@ -183,6 +183,19 @@ async function renderThumb(page, bucketW) {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+/**
+ * pdf.js 的 render() 畫到沒掛進 DOM 的 canvas 時，分頁背景／沒有焦點的狀態下
+ * 偶爾會整個卡住不 resolve。暫時把 canvas 掛到畫面外（不影響版面），畫完再拔掉。
+ * @returns {() => void} 呼叫這個把 canvas 從 DOM 移除
+ */
+function attachOffscreen(canvas) {
+  canvas.style.position = 'fixed';
+  canvas.style.left = '-99999px';
+  canvas.style.top = '0';
+  document.body.appendChild(canvas);
+  return () => canvas.remove();
+}
+
 /** 大圖預覽（不走快取，直接畫到指定 canvas） */
 export async function renderToCanvas(page, canvas, maxW, maxH) {
   const ctx = canvas.getContext('2d');
@@ -290,6 +303,107 @@ export async function exportPdf(pages = store.pages, onProgress) {
     if (i % 8 === 7) await new Promise((r) => setTimeout(r));  // 讓 UI 有機會更新
   }
 
+  return out.save({ useObjectStreams: true });
+}
+
+/**
+ * 把一頁畫成指定 DPI／畫質的 JPEG。純前端沒有真正的 PDF 壓縮引擎，
+ * 唯一能有感縮小檔案的方法就是整頁轉成圖片——代價是文字不能再反白/搜尋。
+ * 輸出頁面尺寸（點）刻意跟原始頁面一樣，只是內容變成點陣圖，物理大小不變。
+ * @returns {Promise<{bytes: Uint8Array, outW: number, outH: number} | null>} blank 頁回傳 null
+ */
+async function rasterizePage(page, dpi, quality, pdfjsDoc) {
+  if (page.kind === 'blank') return null;
+
+  const entry = store.files.get(page.fileId);
+  const swap = page.rotation % 180 !== 0;
+  const outW = swap ? page.height : page.width;   // 輸出頁面尺寸（點），跟原始頁面一致
+  const outH = swap ? page.width : page.height;
+  const scale = dpi / 72;
+
+  const canvas = document.createElement('canvas');
+  const detach = attachOffscreen(canvas);
+  try {
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    if (entry.kind === 'image') {
+      const blob = new Blob([entry.bytes], { type: 'image/png' });
+      const bmp = await createImageBitmap(blob);
+      // 圖片本來的像素密度如果比目標 DPI 低，就不要硬放大
+      const cap = Math.max(bmp.width / page.width, bmp.height / page.height);
+      const useScale = Math.min(scale, cap > 0 ? cap : scale);
+      canvas.width = Math.max(1, Math.round(outW * useScale));
+      canvas.height = Math.max(1, Math.round(outH * useScale));
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((page.rotation * Math.PI) / 180);
+      const drawW = swap ? canvas.height : canvas.width;
+      const drawH = swap ? canvas.width : canvas.height;
+      ctx.drawImage(bmp, -drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.restore();
+      bmp.close?.();
+    } else {
+      // 刻意不共用縮圖用的 renderDocs：跟縮圖系統搶同一份 PDFPageProxy 的渲染佇列，
+      // 在分頁背景/沒有焦點時很容易卡住不 resolve，獨立載入一份才穩定。
+      const pdfPage = await pdfjsDoc.getPage(page.srcIndex + 1);
+      const viewport = pdfPage.getViewport({ scale, rotation: (pdfPage.rotate + page.rotation) % 360 });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+    }
+
+    const blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', quality));
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), outW, outH };
+  } finally {
+    detach();
+  }
+}
+
+/**
+ * 跟 exportPdf 做一樣的事，但每一頁都先轉成 JPEG 再嵌回去（空白頁除外）。
+ * @param {any[]} [pages]
+ * @param {{dpi: number, quality: number}} settings dpi 影響解析度、quality 是 JPEG 品質 0~1
+ * @param {(done:number, total:number) => void} [onProgress]
+ * @returns {Promise<Uint8Array>}
+ */
+export async function exportPdfCompressed(pages = store.pages, settings, onProgress) {
+  const { PDFDocument, degrees } = window.PDFLib;
+  const out = await PDFDocument.create();
+  pages = pages.filter((p) => p.kind !== 'split');
+  // 每份來源 PDF 獨立載入一次（不跟縮圖共用），同一份檔案的多頁共用同一個文件實例
+  const freshDocs = new Map();
+
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
+
+    if (p.kind === 'blank') {
+      const page = out.addPage([p.width, p.height]);
+      if (p.rotation) page.setRotation(degrees(p.rotation));
+    } else {
+      let pdfjsDoc = null;
+      if (p.kind === 'pdf') {
+        pdfjsDoc = freshDocs.get(p.fileId);
+        if (!pdfjsDoc) {
+          const bytes = store.files.get(p.fileId).bytes;
+          pdfjsDoc = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+          freshDocs.set(p.fileId, pdfjsDoc);
+        }
+      }
+      const shot = await rasterizePage(p, settings.dpi, settings.quality, pdfjsDoc);
+      const img = await out.embedJpg(shot.bytes);
+      const page = out.addPage([shot.outW, shot.outH]);
+      page.drawImage(img, { x: 0, y: 0, width: shot.outW, height: shot.outH });
+    }
+
+    onProgress?.(i + 1, pages.length);
+    if (i % 3 === 2) await new Promise((r) => setTimeout(r));  // 讓 UI 有機會更新，畫布運算比較重
+  }
+
+  for (const doc of freshDocs.values()) doc.destroy?.();
   return out.save({ useObjectStreams: true });
 }
 

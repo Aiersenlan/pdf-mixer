@@ -12,7 +12,7 @@ import {
 } from './state.js';
 
 import {
-  loadFile, exportPdf, downloadBytes, renderToCanvas, forgetRenderCache, A4,
+  loadFile, exportPdf, exportPdfCompressed, downloadBytes, renderToCanvas, forgetRenderCache, A4,
 } from './pdfio.js';
 
 import { render, syncSelection, toast, busy, unbusy } from './ui.js';
@@ -37,12 +37,33 @@ const els = {
   shareProgressText: $('#share-progress-text'),
   shareProgressCancel: $('#share-progress-cancel'),
   marquee: $('#marquee'),
+  downloadModal: $('#download-modal'),
+  dlSizeLow: $('#dl-size-low'),
+  dlSizeHigh: $('#dl-size-high'),
+  dlTargetValue: $('#dl-target-value'),
+  dlTargetUnit: $('#dl-target-unit'),
+  dlCancel: $('#dl-cancel'),
+  dlGo: $('#dl-go'),
 };
+
+/** 高壓縮預設的 DPI／JPEG 品質；指定大小壓不到時會依序試更重的設定 */
+const HIGH_SETTINGS = { dpi: 120, quality: 0.6 };
+const TARGET_STEPS = [
+  { dpi: 100, quality: 0.45 },
+  { dpi: 90, quality: 0.35 },
+  { dpi: 72, quality: 0.25 },
+  { dpi: 72, quality: 0.15 },
+];
 
 /** 最近一次「產生連結」成功的網址，給「複製連結」按鈕用。 */
 let lastShareUrls = [];
 /** 目前這次「產生連結」的取消把手；沒有在跑就是 null。 */
 let shareController = null;
+
+/** 下載視窗開著時，背景算好的「低壓縮」「高壓縮」結果；每次開窗都會作廢重算 */
+let dlLowResult = null;
+let dlHighResult = null;
+let dlToken = 0;
 
 /** 由「＋」按鈕觸發的新增，記住要插在哪個位置；null 代表接在最後面 */
 let pendingInsertAt = null;
@@ -533,6 +554,7 @@ function wireKeyboard() {
 
     if (e.key === 'Escape') {
       if (!els.preview.hidden) { closePreview(); return; }
+      if (!els.downloadModal.hidden) { closeDownloadModal(); return; }
       closeAllMenus();
       for (const p of store.pages) p.selected = false;
       syncSelection();
@@ -611,10 +633,19 @@ function closePreview() {
    ============================================================ */
 
 function wireExport() {
-  els.btnDownload.addEventListener('click', doDownload);
+  els.btnDownload.addEventListener('click', openDownloadModal);
   els.btnShare.addEventListener('click', doShare);
   els.shareProgressCancel.addEventListener('click', () => shareController?.abort());
   els.btnCopyLink.addEventListener('click', () => copyShareLinks(false));
+
+  els.dlCancel.addEventListener('click', closeDownloadModal);
+  els.downloadModal.addEventListener('click', (e) => {
+    if (e.target === els.downloadModal) closeDownloadModal();
+  });
+  els.dlGo.addEventListener('click', doDownload);
+  for (const el of [els.dlTargetValue, els.dlTargetUnit]) {
+    el.addEventListener('input', () => { $('input[name="dl-mode"][value="target"]').checked = true; });
+  }
 }
 
 function shareBusy(text) {
@@ -658,13 +689,17 @@ function exportPlan() {
   }));
 }
 
-/** 把目前的匯出計畫實際組成 PDF 位元組，共用給下載跟分享兩個按鈕。 */
-async function buildExportResults(plan, onProgress) {
+/**
+ * 把目前的匯出計畫實際組成 PDF 位元組，共用給下載跟分享。
+ * pageBuilder 預設是無損的 exportPdf，傳自訂的 (pages, onProgress) => Promise<Uint8Array>
+ * 就能換成 exportPdfCompressed 之類的其他做法。
+ */
+async function buildExportResults(plan, onProgress, pageBuilder = exportPdf) {
   const totalPages = plan.reduce((n, f) => n + f.pages.length, 0);
   let done = 0;
   const results = [];
   for (const f of plan) {
-    const bytes = await exportPdf(f.pages, () => {
+    const bytes = await pageBuilder(f.pages, () => {
       onProgress(`正在建立 PDF… ${++done}/${totalPages} 頁`);
     });
     results.push({ name: f.name, bytes });
@@ -672,23 +707,123 @@ async function buildExportResults(plan, onProgress) {
   return results;
 }
 
-async function doDownload() {
+const totalBytesOf = (results) => results.reduce((n, r) => n + r.bytes.length, 0);
+const formatBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(2)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** 連續觸發下載中間留一點間隔，瀏覽器才不會把後面的當成彈出視窗擋掉 */
+async function downloadAll(results) {
+  for (let i = 0; i < results.length; i++) {
+    downloadBytes(results[i].bytes, results[i].name);
+    if (i < results.length - 1) await new Promise((r) => setTimeout(r, 400));
+  }
+  toast(results.length === 1
+    ? `已匯出 ${results[0].name}`
+    : `已匯出 ${results.length} 個檔案：${results[0].name} … ${results.at(-1).name}`);
+}
+
+/* ---------------- 下載前選壓縮方式 ---------------- */
+
+function setDlSizeState(el, text, cls) {
+  el.textContent = text;
+  el.className = `dl-size${cls ? ` ${cls}` : ''}`;
+}
+
+function openDownloadModal() {
   const plan = exportPlan().filter((f) => f.pages.length);
   if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
 
-  busy('正在建立 PDF…');
-  try {
-    const results = await buildExportResults(plan, busy);
+  const token = ++dlToken;
+  dlLowResult = null;
+  dlHighResult = null;
+  setDlSizeState(els.dlSizeLow, '計算中…');
+  setDlSizeState(els.dlSizeHigh, '計算中…');
+  $('input[name="dl-mode"][value="low"]').checked = true;
+  els.downloadModal.hidden = false;
 
-    // 連續觸發下載中間留一點間隔，瀏覽器才不會把後面的當成彈出視窗擋掉
-    for (let i = 0; i < results.length; i++) {
-      downloadBytes(results[i].bytes, results[i].name);
-      if (i < results.length - 1) await new Promise((r) => setTimeout(r, 400));
+  // 背景同時把「低壓縮」「高壓縮」兩個版本都做出來，選哪個就直接用哪個，不用等
+  buildExportResults(plan, () => {}, exportPdf).then((results) => {
+    if (token !== dlToken) return;
+    dlLowResult = results;
+    setDlSizeState(els.dlSizeLow, formatBytes(totalBytesOf(results)), 'is-ready');
+  }).catch((err) => {
+    if (token !== dlToken) return;
+    console.error(err);
+    setDlSizeState(els.dlSizeLow, '算失敗', 'is-error');
+  });
+
+  buildExportResults(plan, () => {}, (pages, cb) => exportPdfCompressed(pages, HIGH_SETTINGS, cb)).then((results) => {
+    if (token !== dlToken) return;
+    dlHighResult = results;
+    setDlSizeState(els.dlSizeHigh, formatBytes(totalBytesOf(results)), 'is-ready');
+  }).catch((err) => {
+    if (token !== dlToken) return;
+    console.error(err);
+    setDlSizeState(els.dlSizeHigh, '算失敗', 'is-error');
+  });
+}
+
+function closeDownloadModal() {
+  dlToken++; // 讓還在背景跑的計算作廢，結果出來也不會再套用
+  els.downloadModal.hidden = true;
+}
+
+/**
+ * 「指定大小」：低壓縮、高壓縮如果本來就有一個達標就直接用；
+ * 兩個都不夠小才真的進入「加重壓縮再試一次」的迴圈，依序試更低的 DPI／畫質。
+ */
+async function resolveTargetDownload(plan, targetBytes) {
+  if (dlLowResult && totalBytesOf(dlLowResult) <= targetBytes) return { results: dlLowResult, met: true };
+  if (dlHighResult && totalBytesOf(dlHighResult) <= targetBytes) return { results: dlHighResult, met: true };
+
+  let best = dlHighResult;
+  let bestBytes = best ? totalBytesOf(best) : Infinity;
+
+  for (const settings of TARGET_STEPS) {
+    const results = await buildExportResults(plan, busy, (pages, cb) => exportPdfCompressed(pages, settings, cb));
+    const bytes = totalBytesOf(results);
+    if (bytes < bestBytes) { best = results; bestBytes = bytes; }
+    if (bytes <= targetBytes) return { results, met: true };
+  }
+  return { results: best, met: false };
+}
+
+async function doDownload() {
+  const mode = $('input[name="dl-mode"]:checked')?.value ?? 'low';
+  const plan = exportPlan().filter((f) => f.pages.length);
+  if (!plan.length) { toast('沒有頁面可以匯出', true); return; }
+
+  els.downloadModal.hidden = true;
+
+  if (mode === 'low' || mode === 'high') {
+    const cached = mode === 'low' ? dlLowResult : dlHighResult;
+    if (cached) { await downloadAll(cached); return; }
+    // 保險：萬一背景計算還沒好使用者就按下載，現場等它做完
+    busy('正在建立 PDF…');
+    try {
+      const results = mode === 'low'
+        ? await buildExportResults(plan, busy)
+        : await buildExportResults(plan, busy, (pages, cb) => exportPdfCompressed(pages, HIGH_SETTINGS, cb));
+      await downloadAll(results);
+    } catch (err) {
+      console.error(err);
+      toast(`匯出失敗：${err.message || err}`, true);
+    } finally {
+      unbusy();
     }
+    return;
+  }
 
-    toast(results.length === 1
-      ? `已匯出 ${results[0].name}`
-      : `已匯出 ${results.length} 個檔案：${results[0].name} … ${results.at(-1).name}`);
+  // 指定大小
+  const value = Number(els.dlTargetValue.value);
+  const unitBytes = Number(els.dlTargetUnit.value);
+  const targetBytes = value > 0 ? value * unitBytes : 0;
+  if (!targetBytes) { toast('請輸入有效的檔案大小', true); return; }
+
+  busy('正在嘗試壓到指定大小以下…');
+  try {
+    const { results, met } = await resolveTargetDownload(plan, targetBytes);
+    await downloadAll(results);
+    if (!met) toast(`壓不到指定大小，已下載能壓到最小的版本（${formatBytes(totalBytesOf(results))}）`, true);
   } catch (err) {
     console.error(err);
     toast(`匯出失敗：${err.message || err}`, true);
